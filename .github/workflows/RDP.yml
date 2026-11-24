@@ -1,0 +1,42 @@
+#Start from here.. 
+#Make by Ali(25cit235)
+name: Windows RDP (Bore)
+
+on:
+  workflow_dispatch:   # Actions tab se haath se chalana hai
+
+jobs:
+  rdp:
+    runs-on: windows-latest
+    timeout-minutes: 350   # 6 ghante ki limit se thora neeche
+
+    steps:
+      # ---- Step 1: Bore download karo (free TCP tunnel) ----
+      - name: Download Bore
+        shell: powershell
+        run: |
+          $rel = Invoke-RestMethod https://api.github.com/repos/ekzhang/bore/releases/latest
+          $asset = $rel.assets | Where-Object { $_.name -like "*windows*" } | Select-Object -First 1
+          Write-Host "Downloading $($asset.name) ..."
+          Invoke-WebRequest $asset.browser_download_url -OutFile bore.zip
+          Expand-Archive bore.zip -DestinationPath bore
+          .\bore\bore.exe --version
+
+      # ---- Step 2: RDP ON karo + password Secret se lo ----
+      - name: Enable RDP + set password
+        shell: powershell
+        env:
+          RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+          Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "$Env:RDP_PASSWORD" -Force)
+          Write-Host "RDP ON. Username: runneradmin"
+
+      # ---- Step 3: Tunnel chalao (ye step chalta rahega) ----
+      # Log mein "listening at bore.pub:xxxxx" likha aayega —
+      # wohi tumhara RDP address hai.
+      - name: Start tunnel
+        shell: powershell
+        run: .\bore\bore.exe local 3389 --to bore.pub
